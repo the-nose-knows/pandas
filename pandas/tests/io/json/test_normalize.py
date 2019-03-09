@@ -1,9 +1,10 @@
-import pytest
-import numpy as np
 import json
 
+import numpy as np
+import pytest
+
+from pandas import DataFrame, Index, compat
 import pandas.util.testing as tm
-from pandas import compat, Index, DataFrame
 
 from pandas.io.json import json_normalize
 from pandas.io.json.normalize import nested_to_record
@@ -52,6 +53,17 @@ def state_data():
          'info': {'governor': 'John Kasich'},
          'shortname': 'OH',
          'state': 'Ohio'}]
+
+
+@pytest.fixture
+def author_missing_data():
+    return [
+        {'info': None},
+        {'info':
+            {'created_at': '11/08/1993', 'last_updated': '26/05/2012'},
+            'author_name':
+         {'first': 'Jane', 'last_name': 'Doe'}
+         }]
 
 
 class TestJSONNormalize(object):
@@ -112,6 +124,27 @@ class TestJSONNormalize(object):
                           'country', 'states_name']).sort_values()
         assert result.columns.sort_values().equals(expected)
 
+    def test_value_array_record_prefix(self):
+        # GH 21536
+        result = json_normalize({'A': [1, 2]}, 'A', record_prefix='Prefix.')
+        expected = DataFrame([[1], [2]], columns=['Prefix.0'])
+        tm.assert_frame_equal(result, expected)
+
+    def test_nested_object_record_path(self):
+        # GH 22706
+        data = {'state': 'Florida',
+                'info': {
+                    'governor': 'Rick Scott',
+                    'counties': [{'name': 'Dade', 'population': 12345},
+                                 {'name': 'Broward', 'population': 40000},
+                                 {'name': 'Palm Beach', 'population': 60000}]}}
+        result = json_normalize(data, record_path=["info", "counties"])
+        expected = DataFrame([['Dade', 12345],
+                              ['Broward', 40000],
+                              ['Palm Beach', 60000]],
+                             columns=['name', 'population'])
+        tm.assert_frame_equal(result, expected)
+
     def test_more_deeply_nested(self, deep_nested):
 
         result = json_normalize(deep_nested, ['states', 'cities'],
@@ -164,12 +197,29 @@ class TestJSONNormalize(object):
                  'data': [{'foo': 'something', 'bar': 'else'},
                           {'foo': 'something2', 'bar': 'else2'}]}]
 
-        with pytest.raises(ValueError):
+        msg = (r"Conflicting metadata name (foo|bar),"
+               " need distinguishing prefix")
+        with pytest.raises(ValueError, match=msg):
             json_normalize(data, 'data', meta=['foo', 'bar'])
 
         result = json_normalize(data, 'data', meta=['foo', 'bar'],
                                 meta_prefix='meta')
 
+        for val in ['metafoo', 'metabar', 'foo', 'bar']:
+            assert val in result
+
+    def test_meta_parameter_not_modified(self):
+        # GH 18610
+        data = [{'foo': 'hello',
+                 'bar': 'there',
+                 'data': [{'foo': 'something', 'bar': 'else'},
+                          {'foo': 'something2', 'bar': 'else2'}]}]
+
+        COLUMNS = ['foo', 'bar']
+        result = json_normalize(data, 'data', meta=COLUMNS,
+                                meta_prefix='meta')
+
+        assert COLUMNS == ['foo', 'bar']
         for val in ['metafoo', 'metabar', 'foo', 'bar']:
             assert val in result
 
@@ -211,8 +261,26 @@ class TestJSONNormalize(object):
         result = json_normalize(json.loads(testjson))
         tm.assert_frame_equal(result, expected)
 
+    def test_missing_field(self, author_missing_data):
+        # GH20030:
+        result = json_normalize(author_missing_data)
+        ex_data = [
+            {'info': np.nan,
+             'author_name.first': np.nan,
+             'author_name.last_name': np.nan,
+             'info.created_at': np.nan,
+             'info.last_updated': np.nan},
+            {'info': None,
+             'author_name.first': 'Jane',
+             'author_name.last_name': 'Doe',
+             'info.created_at': '11/08/1993',
+             'info.last_updated': '26/05/2012'}
+        ]
+        expected = DataFrame(ex_data)
+        tm.assert_frame_equal(result, expected)
 
-class TestNestedToRecord(tm.TestCase):
+
+class TestNestedToRecord(object):
 
     def test_flat_stays_flat(self):
         recs = [dict(flat1=1, flat2=2),
@@ -221,7 +289,7 @@ class TestNestedToRecord(tm.TestCase):
 
         result = nested_to_record(recs)
         expected = recs
-        self.assertEqual(result, expected)
+        assert result == expected
 
     def test_one_level_deep_flattens(self):
         data = dict(flat1=1,
@@ -232,7 +300,7 @@ class TestNestedToRecord(tm.TestCase):
                     'dict1.d': 2,
                     'flat1': 1}
 
-        self.assertEqual(result, expected)
+        assert result == expected
 
     def test_nested_flattens(self):
         data = dict(flat1=1,
@@ -248,7 +316,7 @@ class TestNestedToRecord(tm.TestCase):
                     'nested.e.c': 1,
                     'nested.e.d': 2}
 
-        self.assertEqual(result, expected)
+        assert result == expected
 
     def test_json_normalize_errors(self):
         # GH14583: If meta keys are not always present
@@ -298,12 +366,97 @@ class TestNestedToRecord(tm.TestCase):
                     'price': {0: '0', 1: '0', 2: '0', 3: '0'},
                     'symbol': {0: 'AAPL', 1: 'GOOG', 2: 'AAPL', 3: 'GOOG'}}
 
-        self.assertEqual(j.fillna('').to_dict(), expected)
+        assert j.fillna('').to_dict() == expected
 
-        self.assertRaises(KeyError,
-                          json_normalize, data=i['Trades'],
-                          record_path=[['general', 'stocks']],
-                          meta=[['general', 'tradeid'],
-                                ['general', 'trade_version']],
-                          errors='raise'
-                          )
+        msg = ("Try running with errors='ignore' as key 'trade_version'"
+               " is not always present")
+        with pytest.raises(KeyError, match=msg):
+            json_normalize(
+                data=i['Trades'],
+                record_path=[['general', 'stocks']],
+                meta=[['general', 'tradeid'],
+                      ['general', 'trade_version']],
+                errors='raise')
+
+    def test_donot_drop_nonevalues(self):
+        # GH21356
+        data = [
+            {'info': None,
+             'author_name':
+             {'first': 'Smith', 'last_name': 'Appleseed'}
+             },
+            {'info':
+                {'created_at': '11/08/1993', 'last_updated': '26/05/2012'},
+             'author_name':
+                {'first': 'Jane', 'last_name': 'Doe'}
+             }
+        ]
+        result = nested_to_record(data)
+        expected = [
+            {'info': None,
+             'author_name.first': 'Smith',
+             'author_name.last_name': 'Appleseed'},
+            {'author_name.first': 'Jane',
+             'author_name.last_name': 'Doe',
+             'info.created_at': '11/08/1993',
+             'info.last_updated': '26/05/2012'}]
+
+        assert result == expected
+
+    def test_nonetype_top_level_bottom_level(self):
+        # GH21158: If inner level json has a key with a null value
+        # make sure it doesnt do a new_d.pop twice and except
+        data = {
+            "id": None,
+            "location": {
+                "country": {
+                    "state": {
+                        "id": None,
+                        "town.info": {
+                            "id": None,
+                            "region": None,
+                            "x": 49.151580810546875,
+                            "y": -33.148521423339844,
+                            "z": 27.572303771972656}}}
+            }
+        }
+        result = nested_to_record(data)
+        expected = {
+            'id': None,
+            'location.country.state.id': None,
+            'location.country.state.town.info.id': None,
+            'location.country.state.town.info.region': None,
+            'location.country.state.town.info.x': 49.151580810546875,
+            'location.country.state.town.info.y': -33.148521423339844,
+            'location.country.state.town.info.z': 27.572303771972656}
+        assert result == expected
+
+    def test_nonetype_multiple_levels(self):
+        # GH21158: If inner level json has a key with a null value
+        # make sure it doesnt do a new_d.pop twice and except
+        data = {
+            "id": None,
+            "location": {
+                "id": None,
+                "country": {
+                    "id": None,
+                    "state": {
+                        "id": None,
+                        "town.info": {
+                            "region": None,
+                            "x": 49.151580810546875,
+                            "y": -33.148521423339844,
+                            "z": 27.572303771972656}}}
+            }
+        }
+        result = nested_to_record(data)
+        expected = {
+            'id': None,
+            'location.id': None,
+            'location.country.id': None,
+            'location.country.state.id': None,
+            'location.country.state.town.info.region': None,
+            'location.country.state.town.info.x': 49.151580810546875,
+            'location.country.state.town.info.y': -33.148521423339844,
+            'location.country.state.town.info.z': 27.572303771972656}
+        assert result == expected

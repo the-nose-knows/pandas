@@ -3,6 +3,8 @@ Read SAS sas7bdat or xport files.
 """
 from pandas import compat
 
+from pandas.io.common import _stringify_path
+
 
 def read_sas(filepath_or_buffer, format=None, index=None, encoding=None,
              chunksize=None, iterator=False):
@@ -14,8 +16,8 @@ def read_sas(filepath_or_buffer, format=None, index=None, encoding=None,
     filepath_or_buffer : string or file-like object
         Path to the SAS file.
     format : string {'xport', 'sas7bdat'} or None
-        If None, file format is inferred.  If 'xport' or 'sas7bdat',
-        uses the corresponding format.
+        If None, file format is inferred from file extension. If 'xport' or
+        'sas7bdat', uses the corresponding format.
     index : identifier of index column, defaults to None
         Identifier of column that should be used as index of the DataFrame.
     encoding : string, default is None
@@ -34,18 +36,16 @@ def read_sas(filepath_or_buffer, format=None, index=None, encoding=None,
         buffer_error_msg = ("If this is a buffer object rather "
                             "than a string name, you must specify "
                             "a format string")
+        filepath_or_buffer = _stringify_path(filepath_or_buffer)
         if not isinstance(filepath_or_buffer, compat.string_types):
             raise ValueError(buffer_error_msg)
-        try:
-            fname = filepath_or_buffer.lower()
-            if fname.endswith(".xpt"):
-                format = "xport"
-            elif fname.endswith(".sas7bdat"):
-                format = "sas7bdat"
-            else:
-                raise ValueError("unable to infer format of SAS file")
-        except:
-            pass
+        fname = filepath_or_buffer.lower()
+        if fname.endswith(".xpt"):
+            format = "xport"
+        elif fname.endswith(".sas7bdat"):
+            format = "sas7bdat"
+        else:
+            raise ValueError("unable to infer format of SAS file")
 
     if format.lower() == 'xport':
         from pandas.io.sas.sas_xport import XportReader

@@ -1,8 +1,12 @@
+import os
+
+import numpy as np
+import pytest
+
 import pandas as pd
 import pandas.util.testing as tm
+
 from pandas.io.sas.sasreader import read_sas
-import numpy as np
-import os
 
 # CSV versions of test xpt files were obtained using the R foreign library
 
@@ -16,10 +20,11 @@ def numeric_as_float(data):
             data[v] = data[v].astype(np.float64)
 
 
-class TestXport(tm.TestCase):
+class TestXport(object):
 
-    def setUp(self):
-        self.dirpath = tm.get_data_path()
+    @pytest.fixture(autouse=True)
+    def setup_method(self, datapath):
+        self.dirpath = datapath("io", "sas", "data")
         self.file01 = os.path.join(self.dirpath, "DEMO_G.xpt")
         self.file02 = os.path.join(self.dirpath, "SSHSV1_A.xpt")
         self.file03 = os.path.join(self.dirpath, "DRXFCD_G.xpt")
@@ -40,7 +45,7 @@ class TestXport(tm.TestCase):
         # Test reading beyond end of file
         reader = read_sas(self.file01, format="xport", iterator=True)
         data = reader.read(num_rows + 100)
-        self.assertTrue(data.shape[0] == num_rows)
+        assert data.shape[0] == num_rows
         reader.close()
 
         # Test incremental read with `read` method.
@@ -61,7 +66,7 @@ class TestXport(tm.TestCase):
         for x in reader:
             m += x.shape[0]
         reader.close()
-        self.assertTrue(m == num_rows)
+        assert m == num_rows
 
         # Read full file with `read_sas` method
         data = read_sas(self.file01)

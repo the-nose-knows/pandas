@@ -1,12 +1,16 @@
 import numpy as np
-import pandas.util.testing as tm
+import pytest
 
 import pandas as pd
-from pandas import Series, timedelta_range, Timedelta
+from pandas import Series, Timedelta, timedelta_range
 from pandas.util.testing import assert_series_equal
 
 
-class TestSlicing(tm.TestCase):
+class TestSlicing(object):
+    def test_slice_keeps_name(self):
+        # GH4226
+        dr = pd.timedelta_range('1d', '5d', freq='H', name='timebucket')
+        assert dr[1:].name == dr.name
 
     def test_partial_slice(self):
         rng = timedelta_range('1 day 10:11:12', freq='h', periods=500)
@@ -25,9 +29,11 @@ class TestSlicing(tm.TestCase):
         assert_series_equal(result, expected)
 
         result = s['6 days, 23:11:12']
-        self.assertEqual(result, s.iloc[133])
+        assert result == s.iloc[133]
 
-        self.assertRaises(KeyError, s.__getitem__, '50 days')
+        msg = r"^Timedelta\('50 days 00:00:00'\)$"
+        with pytest.raises(KeyError, match=msg):
+            s['50 days']
 
     def test_partial_slice_high_reso(self):
 
@@ -44,7 +50,7 @@ class TestSlicing(tm.TestCase):
         assert_series_equal(result, expected)
 
         result = s['1 days, 10:11:12.001001']
-        self.assertEqual(result, s.iloc[1001])
+        assert result == s.iloc[1001]
 
     def test_slice_with_negative_step(self):
         ts = Series(np.arange(20), timedelta_range('0', periods=20, freq='H'))
@@ -73,9 +79,9 @@ class TestSlicing(tm.TestCase):
 
     def test_slice_with_zero_step_raises(self):
         ts = Series(np.arange(20), timedelta_range('0', periods=20, freq='H'))
-        self.assertRaisesRegexp(ValueError, 'slice step cannot be zero',
-                                lambda: ts[::0])
-        self.assertRaisesRegexp(ValueError, 'slice step cannot be zero',
-                                lambda: ts.loc[::0])
-        self.assertRaisesRegexp(ValueError, 'slice step cannot be zero',
-                                lambda: ts.loc[::0])
+        with pytest.raises(ValueError, match='slice step cannot be zero'):
+            ts[::0]
+        with pytest.raises(ValueError, match='slice step cannot be zero'):
+            ts.loc[::0]
+        with pytest.raises(ValueError, match='slice step cannot be zero'):
+            ts.loc[::0]

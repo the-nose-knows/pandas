@@ -1,9 +1,12 @@
-from .pandas_vb_common import *
-from pandas.util.decorators import cache_readonly
+import numpy as np
+from pandas import DataFrame
+try:
+    from pandas.util import cache_readonly
+except ImportError:
+    from pandas.util.decorators import cache_readonly
 
 
 class DataFrameAttributes(object):
-    goal_time = 0.2
 
     def setup(self):
         self.df = DataFrame(np.random.randn(10, 6))
@@ -17,7 +20,6 @@ class DataFrameAttributes(object):
 
 
 class CacheReadonly(object):
-    goal_time = 0.2
 
     def setup(self):
 
@@ -30,3 +32,6 @@ class CacheReadonly(object):
 
     def time_cache_readonly(self):
         self.obj.prop
+
+
+from .pandas_vb_common import setup  # noqa: F401

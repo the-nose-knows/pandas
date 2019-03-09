@@ -1,6 +1,7 @@
 # coding: utf-8
 
-import unittest
+import pytest
+
 from pandas.io.msgpack import packb, unpackb
 
 
@@ -8,7 +9,7 @@ class DecodeError(Exception):
     pass
 
 
-class TestObj(unittest.TestCase):
+class TestObj(object):
 
     def _arr_to_str(self, arr):
         return ''.join(str(c) for c in arr)
@@ -46,15 +47,16 @@ class TestObj(unittest.TestCase):
         assert unpacked[1] == prod_sum
 
     def test_only_one_obj_hook(self):
-        self.assertRaises(TypeError, unpackb, b'', object_hook=lambda x: x,
-                          object_pairs_hook=lambda x: x)
+        msg = "object_pairs_hook and object_hook are mutually exclusive"
+        with pytest.raises(TypeError, match=msg):
+            unpackb(b'', object_hook=lambda x: x,
+                    object_pairs_hook=lambda x: x)
 
     def test_bad_hook(self):
-        def f():
+        msg = r"can't serialize \(1\+2j\)"
+        with pytest.raises(TypeError, match=msg):
             packed = packb([3, 1 + 2j], default=lambda o: o)
             unpacked = unpackb(packed, use_list=1)  # noqa
-
-        self.assertRaises(TypeError, f)
 
     def test_array_hook(self):
         packed = packb([1, 2, 3])
@@ -62,15 +64,11 @@ class TestObj(unittest.TestCase):
         assert unpacked == '123'
 
     def test_an_exception_in_objecthook1(self):
-        def f():
+        with pytest.raises(DecodeError, match='Ooops!'):
             packed = packb({1: {'__complex__': True, 'real': 1, 'imag': 2}})
             unpackb(packed, object_hook=self.bad_complex_decoder)
 
-        self.assertRaises(DecodeError, f)
-
     def test_an_exception_in_objecthook2(self):
-        def f():
+        with pytest.raises(DecodeError, match='Ooops!'):
             packed = packb({1: [{'__complex__': True, 'real': 1, 'imag': 2}]})
             unpackb(packed, list_hook=self.bad_complex_decoder, use_list=1)
-
-        self.assertRaises(DecodeError, f)

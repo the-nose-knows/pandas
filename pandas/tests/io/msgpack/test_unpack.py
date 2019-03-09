@@ -1,11 +1,12 @@
 from io import BytesIO
 import sys
-from pandas.io.msgpack import Unpacker, packb, OutOfData, ExtType
-import pandas.util.testing as tm
+
 import pytest
 
+from pandas.io.msgpack import ExtType, OutOfData, Unpacker, packb
 
-class TestUnpack(tm.TestCase):
+
+class TestUnpack(object):
 
     def test_unpack_array_header_from_file(self):
         f = BytesIO(packb([1, 2, 3, 4]))
@@ -15,7 +16,9 @@ class TestUnpack(tm.TestCase):
         assert unpacker.unpack() == 2
         assert unpacker.unpack() == 3
         assert unpacker.unpack() == 4
-        self.assertRaises(OutOfData, unpacker.unpack)
+        msg = "No more data to unpack"
+        with pytest.raises(OutOfData, match=msg):
+            unpacker.unpack()
 
     def test_unpacker_hook_refcnt(self):
         if not hasattr(sys, 'getrefcount'):

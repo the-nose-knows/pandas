@@ -1,14 +1,19 @@
 """ common utilities """
 
 import itertools
-from warnings import catch_warnings
+from warnings import catch_warnings, filterwarnings
+
 import numpy as np
 
 from pandas.compat import lrange
-from pandas.types.common import is_scalar
-from pandas import Series, DataFrame, Panel, date_range, UInt64Index
+
+from pandas.core.dtypes.common import is_scalar
+
+from pandas import (
+    DataFrame, Float64Index, MultiIndex, Series, UInt64Index, date_range)
 from pandas.util import testing as tm
-from pandas.formats.printing import pprint_thing
+
+from pandas.io.formats.printing import pprint_thing
 
 _verbose = False
 
@@ -27,51 +32,51 @@ def _axify(obj, key, axis):
 class Base(object):
     """ indexing comprehensive base class """
 
-    _objs = set(['series', 'frame', 'panel'])
-    _typs = set(['ints', 'uints', 'labels', 'mixed',
-                 'ts', 'floats', 'empty', 'ts_rev'])
+    _objs = {'series', 'frame'}
+    _typs = {'ints', 'uints', 'labels', 'mixed', 'ts', 'floats', 'empty',
+             'ts_rev', 'multi'}
 
-    def setUp(self):
+    def setup_method(self, method):
 
         self.series_ints = Series(np.random.rand(4), index=lrange(0, 8, 2))
         self.frame_ints = DataFrame(np.random.randn(4, 4),
                                     index=lrange(0, 8, 2),
                                     columns=lrange(0, 12, 3))
-        self.panel_ints = Panel(np.random.rand(4, 4, 4),
-                                items=lrange(0, 8, 2),
-                                major_axis=lrange(0, 12, 3),
-                                minor_axis=lrange(0, 16, 4))
 
         self.series_uints = Series(np.random.rand(4),
                                    index=UInt64Index(lrange(0, 8, 2)))
         self.frame_uints = DataFrame(np.random.randn(4, 4),
                                      index=UInt64Index(lrange(0, 8, 2)),
                                      columns=UInt64Index(lrange(0, 12, 3)))
-        self.panel_uints = Panel(np.random.rand(4, 4, 4),
-                                 items=UInt64Index(lrange(0, 8, 2)),
-                                 major_axis=UInt64Index(lrange(0, 12, 3)),
-                                 minor_axis=UInt64Index(lrange(0, 16, 4)))
+
+        self.series_floats = Series(np.random.rand(4),
+                                    index=Float64Index(range(0, 8, 2)))
+        self.frame_floats = DataFrame(np.random.randn(4, 4),
+                                      index=Float64Index(range(0, 8, 2)),
+                                      columns=Float64Index(range(0, 12, 3)))
+
+        m_idces = [MultiIndex.from_product([[1, 2], [3, 4]]),
+                   MultiIndex.from_product([[5, 6], [7, 8]]),
+                   MultiIndex.from_product([[9, 10], [11, 12]])]
+
+        self.series_multi = Series(np.random.rand(4),
+                                   index=m_idces[0])
+        self.frame_multi = DataFrame(np.random.randn(4, 4),
+                                     index=m_idces[0],
+                                     columns=m_idces[1])
 
         self.series_labels = Series(np.random.randn(4), index=list('abcd'))
         self.frame_labels = DataFrame(np.random.randn(4, 4),
                                       index=list('abcd'), columns=list('ABCD'))
-        self.panel_labels = Panel(np.random.randn(4, 4, 4),
-                                  items=list('abcd'),
-                                  major_axis=list('ABCD'),
-                                  minor_axis=list('ZYXW'))
 
         self.series_mixed = Series(np.random.randn(4), index=[2, 4, 'null', 8])
         self.frame_mixed = DataFrame(np.random.randn(4, 4),
                                      index=[2, 4, 'null', 8])
-        self.panel_mixed = Panel(np.random.randn(4, 4, 4),
-                                 items=[2, 4, 'null', 8])
 
         self.series_ts = Series(np.random.randn(4),
                                 index=date_range('20130101', periods=4))
         self.frame_ts = DataFrame(np.random.randn(4, 4),
                                   index=date_range('20130101', periods=4))
-        self.panel_ts = Panel(np.random.randn(4, 4, 4),
-                              items=date_range('20130101', periods=4))
 
         dates_rev = (date_range('20130101', periods=4)
                      .sort_values(ascending=False))
@@ -79,12 +84,9 @@ class Base(object):
                                     index=dates_rev)
         self.frame_ts_rev = DataFrame(np.random.randn(4, 4),
                                       index=dates_rev)
-        self.panel_ts_rev = Panel(np.random.randn(4, 4, 4),
-                                  items=dates_rev)
 
         self.frame_empty = DataFrame({})
         self.series_empty = Series({})
-        self.panel_empty = Panel({})
 
         # form agglomerates
         for o in self._objs:
@@ -96,7 +98,7 @@ class Base(object):
             setattr(self, o, d)
 
     def generate_indices(self, f, values=False):
-        """ generate the indicies
+        """ generate the indices
         if values is True , use the axis values
         is False, use the range
         """
@@ -113,25 +115,25 @@ class Base(object):
         if isinstance(key, dict):
             key = key[axis]
 
-        # use an artifical conversion to map the key as integers to the labels
-        # so ix can work for comparisions
+        # use an artificial conversion to map the key as integers to the labels
+        # so ix can work for comparisons
         if method == 'indexer':
             method = 'ix'
             key = obj._get_axis(axis)[key]
 
         # in case we actually want 0 index slicing
-        try:
-            with catch_warnings(record=True):
+        with catch_warnings(record=True):
+            try:
                 xp = getattr(obj, method).__getitem__(_axify(obj, key, axis))
-        except:
-            xp = getattr(obj, method).__getitem__(key)
+            except AttributeError:
+                xp = getattr(obj, method).__getitem__(key)
 
         return xp
 
     def get_value(self, f, i, values=False):
         """ return the value for the location i """
 
-        # check agains values
+        # check against values
         if values:
             return f.values[i]
 
@@ -141,6 +143,7 @@ class Base(object):
         #    v = v.__getitem__(a)
         # return v
         with catch_warnings(record=True):
+            filterwarnings("ignore", "\\n.ix", DeprecationWarning)
             return f.ix[i]
 
     def check_values(self, f, func, values=False):
@@ -153,7 +156,7 @@ class Base(object):
         for i in indicies:
             result = getattr(f, func)[i]
 
-            # check agains values
+            # check against values
             if values:
                 expected = f.values[i]
             else:
@@ -185,7 +188,7 @@ class Base(object):
 
                 try:
                     xp = self.get_result(obj, method2, k2, a)
-                except:
+                except Exception:
                     result = 'no comp'
                     _print(result)
                     return
@@ -194,13 +197,11 @@ class Base(object):
 
                 try:
                     if is_scalar(rs) and is_scalar(xp):
-                        self.assertEqual(rs, xp)
+                        assert rs == xp
                     elif xp.ndim == 1:
                         tm.assert_series_equal(rs, xp)
                     elif xp.ndim == 2:
                         tm.assert_frame_equal(rs, xp)
-                    elif xp.ndim == 3:
-                        tm.assert_panel_equal(rs, xp)
                     result = 'ok'
                 except AssertionError as e:
                     detail = str(e)
@@ -241,7 +242,7 @@ class Base(object):
             else:
                 axes = list(axes)
         else:
-            axes = [0, 1, 2]
+            axes = [0, 1]
 
         # check
         for o in objs:
@@ -255,8 +256,13 @@ class Base(object):
                         continue
 
                     obj = d[t]
-                    if obj is not None:
+                    if obj is None:
+                        continue
+
+                    def _call(obj=obj):
                         obj = obj.copy()
 
                         k2 = key2
                         _eq(t, o, a, obj, key1, k2)
+
+                    _call()

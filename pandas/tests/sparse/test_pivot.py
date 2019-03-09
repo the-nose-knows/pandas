@@ -1,11 +1,12 @@
 import numpy as np
+
 import pandas as pd
 import pandas.util.testing as tm
 
 
-class TestPivotTable(tm.TestCase):
+class TestPivotTable(object):
 
-    def setUp(self):
+    def setup_method(self, method):
         self.dense = pd.DataFrame({'A': ['foo', 'bar', 'foo', 'bar',
                                          'foo', 'bar', 'foo', 'foo'],
                                    'B': ['one', 'one', 'two', 'three',
@@ -47,4 +48,5 @@ class TestPivotTable(tm.TestCase):
                                     values=['D', 'E'])
         res_dense = pd.pivot_table(self.dense, index='A', columns='B',
                                    values=['D', 'E'])
+        res_dense = res_dense.apply(lambda x: x.astype("Sparse[float64]"))
         tm.assert_frame_equal(res_sparse, res_dense)
